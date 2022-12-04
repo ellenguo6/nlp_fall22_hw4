@@ -132,7 +132,42 @@ class BertPredictor(object):
         self.model = transformers.TFDistilBertForMaskedLM.from_pretrained('distilbert-base-uncased')
 
     def predict(self, context : Context) -> str:
-        return None # replace for part 5
+        # part 5
+        candidates = set(get_candidates(context.lemma, context.pos))
+        input = " ".join(context.left_context) + " [MASK] " + " ".join(context.right_context)
+        
+        input_toks = self.tokenizer.encode(input)
+        idx = self.tokenizer.convert_ids_to_tokens(input_toks).index("[MASK]")
+        input_mat = np.array(input_toks).reshape((1,-1))
+        outputs = self.model.predict(input_mat, verbose=False)
+        predictions = outputs[0]
+        best_words = np.argsort(predictions[0][idx])[::-1]
+        tokens = self.tokenizer.convert_ids_to_tokens(best_words)
+        for token in tokens:
+            if token in candidates:
+                return token
+
+        return "smurf"
+
+    def predict_6(self, context : Context) -> str:
+        # part 6
+        # similar idea as part 5, but instead of finding the best word from the wordnet candidates,
+        # return the word that has the highest 
+        candidates = set(get_candidates(context.lemma, context.pos))
+        input = " ".join(context.left_context) + " [MASK] " + " ".join(context.right_context)
+        
+        input_toks = self.tokenizer.encode(input)
+        idx = self.tokenizer.convert_ids_to_tokens(input_toks).index("[MASK]")
+        input_mat = np.array(input_toks).reshape((1,-1))
+        outputs = self.model.predict(input_mat, verbose=False)
+        predictions = outputs[0]
+        best_words = np.argsort(predictions[0][idx])[::-1]
+        tokens = self.tokenizer.convert_ids_to_tokens(best_words)
+        for token in tokens:
+            if token in candidates:
+                return token
+
+        return "smurf"
 
     
 
@@ -143,6 +178,8 @@ if __name__=="__main__":
     W2VMODEL_FILENAME = 'GoogleNews-vectors-negative300.bin.gz'
     predictor = Word2VecSubst(W2VMODEL_FILENAME)
 
+    bert_predictor = BertPredictor()
+
     # PART 1
     # print(get_candidates('slow', 'a'))
 
@@ -151,13 +188,31 @@ if __name__=="__main__":
         # prediction = smurf_predictor(context) 
 
         # PART 2
+        # Total = 298, attempted = 298
+        # precision = 0.097, recall = 0.097
+        # Total with mode 206 attempted 206
+        # precision = 0.131, recall = 0.131
         # prediction = wn_frequency_predictor(context) 
 
         # PART 3
+        # Total = 298, attempted = 298
+        # precision = 0.114, recall = 0.114
+        # Total with mode 206 attempted 206
+        # precision = 0.160, recall = 0.160
         # prediction = wn_simple_lesk_predictor(context) 
 
         # PART 4
-        prediction = predictor.predict_nearest(context)
+        # Total = 298, attempted = 298
+        # precision = 0.115, recall = 0.115
+        # Total with mode 206 attempted 206
+        # precision = 0.170, recall = 0.170
+        # prediction = predictor.predict_nearest(context)
 
+        # PART 5
+        # Total = 298, attempted = 298
+        # precision = 0.115, recall = 0.115
+        # Total with mode 206 attempted 206
+        # precision = 0.170, recall = 0.170
+        prediction = bert_predictor.predict(context)
 
         print("{}.{} {} :: {}".format(context.lemma, context.pos, context.cid, prediction))
