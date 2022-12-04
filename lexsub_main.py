@@ -149,13 +149,72 @@ class BertPredictor(object):
 
         return "smurf"
 
-    def predict_6(self, context : Context) -> str:
-        # part 6
-        # similar idea as part 5, but instead of finding the best word from the wordnet candidates,
-        # return the word that has the highest 
-        candidates = set(get_candidates(context.lemma, context.pos))
+class BetterBertPredictor(object):
+
+    def __init__(self, filename): 
+        self.tokenizer = transformers.DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
+        self.bert_model = transformers.TFDistilBertForMaskedLM.from_pretrained('distilbert-base-uncased')
+        self.word_2_vec_model = gensim.models.KeyedVectors.load_word2vec_format(filename, binary=True)  
+        print("finished initializing BetterBertPredictor")
+
+    def predict(self, context : Context, alpha: float) -> str:
+        # part 6 attempt 1
+        # since BERT is good at finding words that fit in the sentence but might not mean the same,
+        # also incorporate word2vec scoring
+        def normalize(arr, min_val, max_val):
+            output = []
+            diff = max_val - min_val
+            arr_min = min(arr)
+            arr_diff = max(arr) - arr_min
+            for e in arr:
+                val = (((e - arr_min) * diff) / arr_diff) + min_val
+                output.append(val)
+            return output
+            
         input = " ".join(context.left_context) + " [MASK] " + " ".join(context.right_context)
         
+        input_toks = self.tokenizer.encode(input)
+        idx = self.tokenizer.convert_ids_to_tokens(input_toks).index("[MASK]")
+        input_mat = np.array(input_toks).reshape((1,-1))
+        outputs = self.bert_model.predict(input_mat, verbose=False)
+        predictions = outputs[0][0][idx]
+        tokens = self.tokenizer.convert_ids_to_tokens([i for i in range(0, len(predictions))])
+
+        max_score = 0
+        best_prediction = None
+        l = len(predictions)
+        predictions = normalize(predictions, 0, 1)
+        for i, bert_prediction in enumerate(predictions):
+            tok = tokens[i]
+            if tok == context.lemma:
+                continue
+            try:
+                sim = self.word_2_vec_model.similarity(tok, context.lemma)
+            except KeyError:
+                continue
+
+            score = alpha * bert_prediction + (1-alpha) * sim
+            if score > max_score:
+                max_score = score
+                best_prediction = tok
+
+        return best_prediction if best_prediction else "smurf"
+
+class BestBertPredictor(object):
+
+    def __init__(self): 
+        self.tokenizer = transformers.DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
+        self.model = transformers.TFDistilBertForMaskedLM.from_pretrained('distilbert-base-uncased')
+
+    def predict(self, context : Context) -> str:
+        # part 6 attempt 2
+        candidates = get_candidates(context.lemma, context.pos)
+        new_candidates = []
+        for candidate in candidates:
+            new_candidates += get_candidates(candidate, context.pos)
+        candidates = set(new_candidates + candidates)
+
+        input = " ".join(context.left_context) + " [MASK] " + " ".join(context.right_context)
         input_toks = self.tokenizer.encode(input)
         idx = self.tokenizer.convert_ids_to_tokens(input_toks).index("[MASK]")
         input_mat = np.array(input_toks).reshape((1,-1))
@@ -168,7 +227,6 @@ class BertPredictor(object):
                 return token
 
         return "smurf"
-
     
 
 if __name__=="__main__":
@@ -176,14 +234,17 @@ if __name__=="__main__":
     # At submission time, this program should run your best predictor (part 6).
 
     W2VMODEL_FILENAME = 'GoogleNews-vectors-negative300.bin.gz'
-    predictor = Word2VecSubst(W2VMODEL_FILENAME)
+    # predictor = Word2VecSubst(W2VMODEL_FILENAME)
 
-    bert_predictor = BertPredictor()
+    # bert_predictor = BertPredictor()
+    better_bert_predictor = BetterBertPredictor(W2VMODEL_FILENAME)
+    # best_bert_predictor = BestBertPredictor()
 
     # PART 1
     # print(get_candidates('slow', 'a'))
 
     for context in read_lexsub_xml(sys.argv[1]):
+
         # print(context)  # useful for debugging
         # prediction = smurf_predictor(context) 
 
@@ -213,6 +274,51 @@ if __name__=="__main__":
         # precision = 0.115, recall = 0.115
         # Total with mode 206 attempted 206
         # precision = 0.170, recall = 0.170
-        prediction = bert_predictor.predict(context)
+        # prediction = bert_predictor.predict(context)
+
+        # PART 6 attempt 1
+        # tried a couple alphas, found that 0.6 was the best
+        # (.predict files reflect which alpha was used, 
+        # so 0.2.predict is for alpha = 0.2)
+        # though still didn't outperform Part 5
+        # ---SCORING FOR 0.0---
+        # Total = 298, attempted = 298
+        # precision = 0.075, recall = 0.075
+        # Total with mode 206 attempted 206
+        # precision = 0.121, recall = 0.121
+        # ---SCORING FOR 0.2---
+        # Total = 298, attempted = 298
+        # precision = 0.085, recall = 0.085
+        # Total with mode 206 attempted 206
+        # precision = 0.136, recall = 0.136
+        # ---SCORING FOR 0.4---
+        # Total = 298, attempted = 298
+        # precision = 0.089, recall = 0.089
+        # Total with mode 206 attempted 206
+        # precision = 0.136, recall = 0.136
+        # ---SCORING FOR 0.6---
+        # Total = 298, attempted = 298
+        # precision = 0.091, recall = 0.091
+        # Total with mode 206 attempted 206
+        # precision = 0.160, recall = 0.160
+        # ---SCORING FOR 0.8---
+        # Total = 298, attempted = 298
+        # precision = 0.060, recall = 0.060
+        # Total with mode 206 attempted 206
+        # precision = 0.102, recall = 0.102
+        # ---SCORING FOR 1.0---
+        # Total = 298, attempted = 298
+        # precision = 0.035, recall = 0.035
+        # Total with mode 206 attempted 206
+        # precision = 0.058, recall = 0.058
+        
+        prediction = better_bert_predictor.predict(context, alpha=0.6)
+
+        # PART 6 attempt 2 -- lol even worse
+        # Total = 298, attempted = 298
+        # precision = 0.042, recall = 0.042
+        # Total with mode 206 attempted 206
+        # precision = 0.063, recall = 0.063
+        # prediction = best_bert_predictor.predict(context)
 
         print("{}.{} {} :: {}".format(context.lemma, context.pos, context.cid, prediction))
